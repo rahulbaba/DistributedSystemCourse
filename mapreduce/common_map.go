@@ -1,7 +1,13 @@
 package mapreduce
 
 import (
+	"encoding/json"
+	"fmt"
 	"hash/fnv"
+	"io/ioutil"
+	"log"
+	"math"
+	"os"
 )
 
 // doMap does the job of a map worker: it reads one of the input files
@@ -14,6 +20,39 @@ func doMap(
 	nReduce int, // the number of reduce task that will be run ("R" in the paper)
 	mapF func(file string, contents string) []KeyValue,
 ) {
+	b, err := ioutil.ReadFile(inFile)
+	if err != nil {
+		fmt.Print(err)
+	}
+
+	debug("doMap : Reading map files")
+	mapValues := mapF(inFile, string(b))
+
+	//creating reduce file for this mapFile.
+	//var reduceFileWriters []*bufio.Writer
+	debug("doMap : Creating reduce files")
+	var reduceFiles []*os.File
+	var jsonEncoder []*json.Encoder
+	for i := 0; i < nReduce; i++ {
+		//debug("doMap : creating file %s/n", reduceName(jobName, mapTaskNumber, i))
+		file, err := os.Create(reduceName(jobName, mapTaskNumber, i))
+		if err != nil {
+			log.Fatal("doMap: ", err)
+		}
+		reduceFiles = append(reduceFiles, file)
+		//reduceFileWriters = append(reduceFileWriters, bufio.NewWriter(file))
+		jsonEncoder = append(jsonEncoder, json.NewEncoder(file))
+
+		//defer reduceFileWriters[i].Flush()
+		defer reduceFiles[i].Close()
+	}
+
+	debug("doMap : Writing reduce files")
+	for _, mv := range mapValues {
+		key := int(math.Mod(float64(ihash(mv.Key)), float64(nReduce)))
+		//debug("%s", key)
+		jsonEncoder[key].Encode(&mv)
+	}
 	// TODO:
 	// You will need to write this function.
 	// You can find the filename for this map task's input to reduce task number
